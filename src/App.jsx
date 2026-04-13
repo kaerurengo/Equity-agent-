@@ -2,15 +2,29 @@ import { useState, useEffect } from "react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 
 // ─────────────────────────────────────────────
-// DEFAULT WATCHLIST CONFIG — edit tickers & base prices here
+// CURRENCY CONFIG
+// Add more currencies here as needed.
+// decimals: 0 = no cents (JPY), 2 = cents (USD, EUR etc.)
 // ─────────────────────────────────────────────
-const DEFAULT_WATCHLIST = [
-  { ticker: "AAPL", name: "Apple Inc.",       sector: "Technology",     basePrice: 187  },
-  { ticker: "NVDA", name: "NVIDIA Corp.",      sector: "Semiconductors", basePrice: 875  },
-  { ticker: "TSLA", name: "Tesla Inc.",        sector: "Automotive",     basePrice: 172  },
-  { ticker: "MSFT", name: "Microsoft Corp.",   sector: "Technology",     basePrice: 415  },
-  { ticker: "AMZN", name: "Amazon.com",        sector: "Consumer",       basePrice: 192  },
-];
+const CURRENCIES = {
+  USD: { symbol: "$", decimals: 2, locale: "en-US" },
+  JPY: { symbol: "¥", decimals: 0, locale: "ja-JP" },
+  EUR: { symbol: "€", decimals: 2, locale: "de-DE" },
+  GBP: { symbol: "£", decimals: 2, locale: "en-GB" },
+  KRW: { symbol: "₩", decimals: 0, locale: "ko-KR" },
+  CNY: { symbol: "¥", decimals: 2, locale: "zh-CN" },
+};
+
+function formatPrice(price, currency = "USD") {
+  const c = CURRENCIES[currency] || CURRENCIES.USD;
+  const rounded = c.decimals === 0 ? Math.round(price) : parseFloat(price.toFixed(c.decimals));
+  return `${c.symbol}${rounded.toLocaleString(c.locale)}`;
+}
+
+// ─────────────────────────────────────────────
+// DEFAULT WATCHLIST — starts empty
+// ─────────────────────────────────────────────
+const DEFAULT_WATCHLIST = [];
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -23,16 +37,16 @@ function generatePriceHistory(base, days = 30) {
     price = Math.max(price + change, base * 0.7);
     const d = new Date();
     d.setDate(d.getDate() - i);
-    data.push({ date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }), price: parseFloat(price.toFixed(2)) });
+    data.push({ date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }), price: parseFloat(price.toFixed(4)) });
   }
   return data;
 }
 
 function generateSignal(history) {
-  const prices  = history.map(h => h.price);
-  const avg     = prices.slice(-10).reduce((a, b) => a + b, 0) / 10;
-  const shortAvg= prices.slice(-3).reduce((a, b) => a + b, 0) / 3;
-  const momentum= (shortAvg - avg) / avg;
+  const prices   = history.map(h => h.price);
+  const avg      = prices.slice(-10).reduce((a, b) => a + b, 0) / 10;
+  const shortAvg = prices.slice(-3).reduce((a, b) => a + b, 0) / 3;
+  const momentum = (shortAvg - avg) / avg;
   if (momentum >  0.012) return { signal: "BUY",  strength: Math.min(99, Math.round(60 + momentum * 2000)),           reason: "Momentum surge detected above 10-day MA" };
   if (momentum < -0.012) return { signal: "SELL", strength: Math.min(99, Math.round(60 + Math.abs(momentum) * 2000)), reason: "Bearish crossover below 10-day MA" };
   return                         { signal: "HOLD", strength: Math.round(50 + Math.random() * 20),                      reason: "Consolidation phase — await breakout" };
@@ -93,7 +107,7 @@ function AIAnalysis({ stock }) {
 // Stock card (watchlist row)
 // ─────────────────────────────────────────────
 function StockCard({ stock, selected, onClick }) {
-  const { history, signal, ticker, name } = stock;
+  const { history, signal, ticker, name, currency = "USD" } = stock;
   const last   = history[history.length - 1].price;
   const prev   = history[history.length - 2].price;
   const change = ((last - prev) / prev * 100).toFixed(2);
@@ -106,11 +120,12 @@ function StockCard({ stock, selected, onClick }) {
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 15, fontWeight: 700, color: "#e8ecff", fontFamily: "'DM Sans',sans-serif" }}>{ticker}</span>
             <span style={{ fontSize: 10, fontFamily: "'DM Mono',monospace", fontWeight: 700, color: SIGNAL_COLOR[signal.signal], background: SIGNAL_BG[signal.signal], padding: "2px 7px", borderRadius: 6, letterSpacing: "0.08em" }}>{signal.signal}</span>
+            <span style={{ fontSize: 9, fontFamily: "'DM Mono',monospace", color: "#4a5270", letterSpacing: "0.08em" }}>{currency}</span>
           </div>
           <div style={{ fontSize: 11, color: "#6e7a9a", marginTop: 2, fontFamily: "'DM Sans',sans-serif" }}>{name}</div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "#e8ecff", fontFamily: "'DM Mono',monospace" }}>${last.toFixed(2)}</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#e8ecff", fontFamily: "'DM Mono',monospace" }}>{formatPrice(last, currency)}</div>
           <div style={{ fontSize: 11, color: up ? "#00e5a0" : "#ff4d6d", fontFamily: "'DM Mono',monospace" }}>{up ? "▲" : "▼"} {Math.abs(change)}%</div>
         </div>
       </div>
@@ -135,7 +150,7 @@ function StockCard({ stock, selected, onClick }) {
 // Detail / analysis view
 // ─────────────────────────────────────────────
 function DetailView({ stock }) {
-  const { history, signal, ticker, sector } = stock;
+  const { history, signal, ticker, sector, currency = "USD" } = stock;
   const last     = history[history.length - 1].price;
   const prev     = history[history.length - 2].price;
   const change   = ((last - prev) / prev * 100).toFixed(2);
@@ -148,10 +163,10 @@ function DetailView({ stock }) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
             <div style={{ fontSize: 22, fontWeight: 800, color: "#e8ecff", fontFamily: "'DM Sans',sans-serif" }}>{ticker}</div>
-            <div style={{ fontSize: 12, color: "#6e7a9a", fontFamily: "'DM Sans',sans-serif" }}>{sector}</div>
+            <div style={{ fontSize: 12, color: "#6e7a9a", fontFamily: "'DM Sans',sans-serif" }}>{sector} · {currency}</div>
           </div>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 26, fontWeight: 800, color: "#e8ecff", fontFamily: "'DM Mono',monospace" }}>${last.toFixed(2)}</div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: "#e8ecff", fontFamily: "'DM Mono',monospace" }}>{formatPrice(last, currency)}</div>
             <div style={{ fontSize: 13, color: up ? "#00e5a0" : "#ff4d6d", fontFamily: "'DM Mono',monospace" }}>{up ? "▲" : "▼"} {Math.abs(change)}% today</div>
           </div>
         </div>
@@ -168,14 +183,14 @@ function DetailView({ stock }) {
                 </linearGradient>
               </defs>
               <XAxis dataKey="date" tick={{ fill: "#4a5270", fontSize: 10, fontFamily: "'DM Mono',monospace" }} tickLine={false} axisLine={false} interval={6} />
-              <YAxis domain={["auto","auto"]} tick={{ fill: "#4a5270", fontSize: 10, fontFamily: "'DM Mono',monospace" }} tickLine={false} axisLine={false} width={50} tickFormatter={v => `$${v}`} />
-              <Tooltip contentStyle={{ background: "#0d1226", border: "1px solid rgba(124,143,255,0.3)", borderRadius: 10, fontSize: 12, fontFamily: "'DM Mono',monospace", color: "#e8ecff" }} formatter={v => [`$${v}`, "Price"]} />
+              <YAxis domain={["auto","auto"]} tick={{ fill: "#4a5270", fontSize: 10, fontFamily: "'DM Mono',monospace" }} tickLine={false} axisLine={false} width={55} tickFormatter={v => formatPrice(v, currency)} />
+              <Tooltip contentStyle={{ background: "#0d1226", border: "1px solid rgba(124,143,255,0.3)", borderRadius: 10, fontSize: 12, fontFamily: "'DM Mono',monospace", color: "#e8ecff" }} formatter={v => [formatPrice(v, currency), "Price"]} />
               <ReferenceLine y={avgPrice} stroke="#7c8fff" strokeDasharray="4 4" strokeOpacity={0.5} />
               <Area type="monotone" dataKey="price" stroke="#7c8fff" strokeWidth={2} fill="url(#mainGrad)" dot={false} activeDot={{ r: 4, fill: "#7c8fff" }} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
-        <div style={{ textAlign: "center", fontSize: 10, color: "#4a5270", fontFamily: "'DM Mono',monospace", marginTop: 4 }}>— 10-day MA: ${avgPrice.toFixed(2)}</div>
+        <div style={{ textAlign: "center", fontSize: 10, color: "#4a5270", fontFamily: "'DM Mono',monospace", marginTop: 4 }}>— 10-day MA: {formatPrice(avgPrice, currency)}</div>
       </div>
 
       <div style={{ background: SIGNAL_BG[signal.signal], borderRadius: 18, padding: "16px 18px", border: `1px solid ${SIGNAL_COLOR[signal.signal]}33`, marginBottom: 16 }}>
@@ -197,8 +212,8 @@ function DetailView({ stock }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
         {[
-          { label: "30D HIGH", value: `$${Math.max(...history.map(h => h.price)).toFixed(2)}` },
-          { label: "30D LOW",  value: `$${Math.min(...history.map(h => h.price)).toFixed(2)}` },
+          { label: "30D HIGH", value: formatPrice(Math.max(...history.map(h => h.price)), currency) },
+          { label: "30D LOW",  value: formatPrice(Math.min(...history.map(h => h.price)), currency) },
           { label: "SECTOR",   value: sector.split(" ")[0] },
         ].map(({ label, value }) => (
           <div key={label} style={{ background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: "10px 12px", border: "1px solid rgba(255,255,255,0.07)" }}>
@@ -221,6 +236,7 @@ function ConfigPage({ watchlist, onAdd, onRemove }) {
   const [name,      setName]      = useState("");
   const [sector,    setSector]    = useState("");
   const [basePrice, setBasePrice] = useState("");
+  const [currency,  setCurrency]  = useState("USD");
   const [error,     setError]     = useState("");
   const [success,   setSuccess]   = useState("");
 
@@ -238,9 +254,9 @@ function ConfigPage({ watchlist, onAdd, onRemove }) {
     if (isNaN(p) || p <= 0)        { setError("Enter a valid base price > 0.");         setSuccess(""); return; }
     if (watchlist.find(s => s.ticker === t)) { setError(`${t} is already on your watchlist.`); setSuccess(""); return; }
     setError("");
-    onAdd({ ticker: t, name: name.trim(), sector: sector.trim() || "Unknown", basePrice: p });
+    onAdd({ ticker: t, name: name.trim(), sector: sector.trim() || "Unknown", basePrice: p, currency });
     setSuccess(`${t} added to watchlist!`);
-    setTicker(""); setName(""); setSector(""); setBasePrice("");
+    setTicker(""); setName(""); setSector(""); setBasePrice(""); setCurrency("USD");
     setTimeout(() => setSuccess(""), 3000);
   };
 
@@ -251,16 +267,29 @@ function ConfigPage({ watchlist, onAdd, onRemove }) {
         <div style={{ fontSize: 11, color: "#7c8fff", fontFamily: "'DM Mono',monospace", letterSpacing: "0.12em", marginBottom: 14 }}>＋ ADD STOCK TO WATCHLIST</div>
 
         <label style={labelStyle}>TICKER SYMBOL *</label>
-        <input style={inputStyle} placeholder="e.g. GOOG" value={ticker} onChange={e => setTicker(e.target.value.toUpperCase())} maxLength={8} />
+        <input style={inputStyle} placeholder="e.g. 7203.T" value={ticker} onChange={e => setTicker(e.target.value.toUpperCase())} maxLength={10} />
 
         <label style={labelStyle}>COMPANY NAME *</label>
-        <input style={inputStyle} placeholder="e.g. Alphabet Inc." value={name} onChange={e => setName(e.target.value)} />
+        <input style={inputStyle} placeholder="e.g. Toyota Motor Corp." value={name} onChange={e => setName(e.target.value)} />
 
         <label style={labelStyle}>SECTOR (optional)</label>
-        <input style={inputStyle} placeholder="e.g. Technology" value={sector} onChange={e => setSector(e.target.value)} />
+        <input style={inputStyle} placeholder="e.g. Automotive" value={sector} onChange={e => setSector(e.target.value)} />
 
-        <label style={labelStyle}>BASE PRICE USD *</label>
-        <input style={inputStyle} placeholder="e.g. 175.00" value={basePrice} type="number" min="0.01" step="0.01" onChange={e => setBasePrice(e.target.value)} />
+        <label style={labelStyle}>CURRENCY *</label>
+        <select
+          value={currency}
+          onChange={e => setCurrency(e.target.value)}
+          style={{ ...inputStyle, marginBottom: 8, cursor: "pointer" }}
+        >
+          {Object.entries(CURRENCIES).map(([code, { symbol }]) => (
+            <option key={code} value={code} style={{ background: "#0d1226" }}>
+              {code} — {symbol}
+            </option>
+          ))}
+        </select>
+
+        <label style={labelStyle}>BASE PRICE ({currency}) *</label>
+        <input style={inputStyle} placeholder={currency === "JPY" || currency === "KRW" ? "e.g. 28000" : "e.g. 175.00"} value={basePrice} type="number" min="0.01" step={currency === "JPY" || currency === "KRW" ? "1" : "0.01"} onChange={e => setBasePrice(e.target.value)} />
 
         {error   && <div style={{ fontSize: 11, color: "#ff4d6d", fontFamily: "'DM Mono',monospace", marginBottom: 8 }}>⚠ {error}</div>}
         {success && <div style={{ fontSize: 11, color: "#00e5a0", fontFamily: "'DM Mono',monospace", marginBottom: 8 }}>✓ {success}</div>}
@@ -277,8 +306,11 @@ function ConfigPage({ watchlist, onAdd, onRemove }) {
       {watchlist.map(stock => (
         <div key={stock.ticker} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: "12px 14px", marginBottom: 8, border: "1px solid rgba(255,255,255,0.07)" }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#e8ecff", fontFamily: "'DM Sans',sans-serif" }}>{stock.ticker}</div>
-            <div style={{ fontSize: 11, color: "#6e7a9a", fontFamily: "'DM Sans',sans-serif" }}>{stock.name} · base ${stock.basePrice}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#e8ecff", fontFamily: "'DM Sans',sans-serif" }}>{stock.ticker}</div>
+              <div style={{ fontSize: 9, color: "#4a5270", fontFamily: "'DM Mono',monospace" }}>{stock.currency || "USD"}</div>
+            </div>
+            <div style={{ fontSize: 11, color: "#6e7a9a", fontFamily: "'DM Sans',sans-serif" }}>{stock.name} · {formatPrice(stock.basePrice, stock.currency)}</div>
             <div style={{ fontSize: 10, color: "#3a4262", fontFamily: "'DM Mono',monospace", marginTop: 2 }}>{stock.sector}</div>
           </div>
           <button onClick={() => onRemove(stock.ticker)} style={{ background: "rgba(255,77,109,0.12)", border: "1px solid rgba(255,77,109,0.3)", borderRadius: 10, padding: "5px 12px", color: "#ff4d6d", fontSize: 12, fontFamily: "'DM Mono',monospace", cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>
@@ -287,7 +319,7 @@ function ConfigPage({ watchlist, onAdd, onRemove }) {
         </div>
       ))}
       {watchlist.length === 0 && (
-        <div style={{ textAlign: "center", color: "#3a4262", fontFamily: "'DM Mono',monospace", fontSize: 12, padding: 24 }}>No stocks on watchlist</div>
+        <div style={{ textAlign: "center", color: "#3a4262", fontFamily: "'DM Mono',monospace", fontSize: 12, padding: 24 }}>No stocks on watchlist — add one above ↑</div>
       )}
     </div>
   );
@@ -338,6 +370,7 @@ export default function App() {
         @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
         input::placeholder { color:#3a4262; }
         input:focus { border-color:rgba(124,143,255,0.45) !important; background:rgba(124,143,255,0.08) !important; }
+        select option { background:#0d1226; color:#e8ecff; }
       `}</style>
 
       <div style={{ width: 393, minHeight: 852, background: "#080c1a", borderRadius: 54, border: "10px solid #1a1f30", boxShadow: "0 0 0 1px #2a3050,0 40px 100px rgba(0,0,0,0.8),0 0 60px rgba(124,143,255,0.08) inset", overflow: "hidden", position: "relative", marginTop: 40 }}>
@@ -370,7 +403,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* Inner tab switcher (only on market views) */}
+        {/* Inner tab switcher */}
         {tab !== "config" && (
           <div style={{ display: "flex", margin: "0 24px 16px", background: "rgba(255,255,255,0.05)", borderRadius: 14, padding: 4 }}>
             {[["watchlist","Watchlist"],["detail","Analysis"]].map(([key, label]) => (
